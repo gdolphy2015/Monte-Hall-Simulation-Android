@@ -1,5 +1,7 @@
 package com.example.grace.montyhallsimulation;
 
+import android.content.SharedPreferences;
+import android.preference.PreferenceManager;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
 import android.view.View;
@@ -10,20 +12,30 @@ import java.util.Random;
 
 public class MainActivity extends AppCompatActivity {
     RandomDoorGenerator rdg;
+    Score score;
     boolean doorHasBeenSelected = false;
     Door userSelectedDoor;
     Door removedDoor;
-    int totalGames = 0;
-    int switchWins = 0;
-    int switchTotal = 0;
-    int stayWins = 0;
-    int stayTotal = 0;
     boolean gameOver = false;
+
+    SharedPreferences sharedPreferences;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
+
+        sharedPreferences = PreferenceManager.getDefaultSharedPreferences(this);
+
+        score = new Score(sharedPreferences, MainActivity.this);
+        score.updateLocalScoreVariables();
+
+        if (score.getTotalGames() != 0) {
+            updateTotalWins();
+            updateGameCounter();
+            updateStayAndWonRatio();
+            updateSwitchAndWonRatio();
+        }
 
         //used to generate which door (A, B , or C) is the prize door and the other 2 will be the
         //non desired doors.
@@ -109,7 +121,7 @@ public class MainActivity extends AppCompatActivity {
     private void checkIfWon(char doorLetter) {
         gameOver = true;
 
-        totalGames++;
+        score.incrementTotalGames();
 
         Button button = getDoor(doorLetter);
 
@@ -122,24 +134,16 @@ public class MainActivity extends AppCompatActivity {
             promptText.setText(message);
 
             if (userSelectedDoor.doorLetter == doorLetter) { //user stuck with their answer
-                stayTotal++;
-                stayWins++;
+                score.incrementStayTotal();
+                score.incrementStayWins();
 
-                //update stats
-                TextView stayText = findViewById(R.id.stay);
-                String numericalValue = String.format("%.2f", (stayWins * 1.0)/stayTotal*100.0);
-                message = "Stay and Won Ratio: " + numericalValue + "%";
-                stayText.setText(message);
+                updateStayAndWonRatio();
 
             } else { //user switched answers
-                switchTotal++;
-                switchWins++;
+                score.incrementSwitchTotal();
+                score.incrementSwitchWins();
 
-                //update stats
-                TextView switchText = findViewById(R.id.switched);
-                String numericalValue = String.format("%.2f", (switchWins * 1.0)/switchTotal*100.0);
-                message = "Switch and Won Ratio: " + numericalValue + "%";
-                switchText.setText(message);
+                updateSwitchAndWonRatio();
 
                 //switch back the original choice, to default color
                 getDoor(userSelectedDoor.doorLetter).setBackgroundColor(getResources().getColor(R.color.defaultButtonColor));
@@ -151,24 +155,16 @@ public class MainActivity extends AppCompatActivity {
             promptText.setText(message);
 
             if (userSelectedDoor.doorLetter == doorLetter) { //user stuck with their answer and lost
-                stayTotal++;
+                score.incrementStayTotal();
 
-                //update stats
-                TextView stayText = findViewById(R.id.stay);
-                String numericalValue = String.format("%.2f", (stayWins * 1.0)/stayTotal*100.0);
-                message = "Stay and Won Ratio: " + numericalValue + "%";
-                stayText.setText(message);
+                updateStayAndWonRatio();
 
                 //show the red box meaning the choice was losing.
                 getDoor(doorLetter).setBackgroundColor(getResources().getColor(R.color.lose));
             } else { //user switched answers and lost
-                switchTotal++;
+                score.incrementSwitchTotal();
 
-                //update stats
-                TextView switchText = findViewById(R.id.switched);
-                String numericalValue = String.format("%.2f", (switchWins * 1.0)/switchTotal*100.0);
-                message = "Switch and Won Ratio: " + numericalValue + "%";
-                switchText.setText(message);
+                updateSwitchAndWonRatio();
 
                 //switch back the original choice, to default color
                 getDoor(userSelectedDoor.doorLetter).setBackgroundColor(getResources().getColor(R.color.defaultButtonColor));
@@ -179,22 +175,46 @@ public class MainActivity extends AppCompatActivity {
             getDoor(rdg.getPrizeDoor().doorLetter).setBackgroundColor(getResources().getColor(R.color.winner));
         }
 
-        //update total wins stats
-        TextView overallText = findViewById(R.id.overall);
-        String numericalValue = String.format("%.2f", ((switchWins+stayWins)* 1.0)/totalGames*100.0);
-        String message = "Overall Winnings: " + numericalValue + "%";
-        overallText.setText(message);
-
-        TextView gameCounter = findViewById(R.id.gameCounter);
-        if (totalGames == 1) {
-            message = "Overall Stats (" + totalGames + " game):";
-        } else {
-            message = "Overall Stats (" + totalGames + " games):";
-        }
-        gameCounter.setText(message);
+        updateTotalWins();
+        updateGameCounter();
 
         Button newGame = findViewById(R.id.newGameButton);
         newGame.setVisibility(View.VISIBLE);
+
+        score.saveScorePreferences();
+    }
+
+    public void updateStayAndWonRatio() {
+        TextView stayText = findViewById(R.id.stay);
+        String numericalValue = score.getNumericalScore(score.getStayWins(), score.getStayTotal());
+        String message = "Stay and Won Ratio: " + numericalValue + "%";
+        stayText.setText(message);
+    }
+
+    public void updateSwitchAndWonRatio() {
+        TextView switchText = findViewById(R.id.switched);
+        String numericalValue = score.getNumericalScore(score.getSwitchWins(), score.getSwitchTotal());
+        String message = "Switch and Won Ratio: " + numericalValue + "%";
+        switchText.setText(message);
+    }
+
+    public void updateTotalWins() {
+        //update total wins stats
+        TextView overallText = findViewById(R.id.overall);
+        String numericalValue = score.getNumericalScore(score.getSwitchWins() + score.getStayWins(), score.getTotalGames());
+        String message = "Overall Winnings: " + numericalValue + "%";
+        overallText.setText(message);
+    }
+
+    public void updateGameCounter() {
+        String message;
+        TextView gameCounter = findViewById(R.id.gameCounter);
+        if ( score.getTotalGames() == 1) {
+            message = "Overall Stats (" + score.getTotalGames() + " game):";
+        } else {
+            message = "Overall Stats (" + score.getTotalGames() + " games):";
+        }
+        gameCounter.setText(message);
     }
 
 
